@@ -1,190 +1,477 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, Modal, Alert, TextInput } from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  Modal,
+  PermissionsAndroid, 
+  Alert,
+  TextInput,
+  ScrollView,
+  SafeAreaView,
+  StatusBar,
+  StyleSheet,
+  Platform
+} from 'react-native';
+import * as MediaLibrary from 'expo-media-library';
+import { captureRef } from 'react-native-view-shot';
+import * as FileSystem from 'expo-file-system'; // Expo-friendly file system module
 import { ProgressCircle } from 'react-native-svg-charts';
-import { ref, onValue, push } from 'firebase/database';
-import { database } from '../firebase'; // Import the database object
-import LottieView from 'lottie-react-native'; // Import Lottie for the animation
-import { FontAwesome } from '@expo/vector-icons'; // To use the menu icon
-import { LinearGradient } from 'expo-linear-gradient'; // To create gradient buttons
-import Animated, { Easing, withTiming } from 'react-native-reanimated'; // Import Reanimated
+import { ref, onValue, push, query, limitToLast, get } from 'firebase/database';
+import { database } from '../firebase';
+import LottieView from 'lottie-react-native';
+import { FontAwesome, Ionicons } from '@expo/vector-icons';
+import Animated, { Easing, withTiming } from 'react-native-reanimated';
 
 export default function MainScreen({ navigation }) {
-  const [temperature, setTemperature] = useState(0);
-  const [humidity, setHumidity] = useState(0);
-  const [pulseRate, setPulseRate] = useState(0);
-  const [oxygenRate, setOxygenRate] = useState(0);
-  const [spO2, setSpO2] = useState(0);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [message, setMessage] = useState(''); // State for message input
+  const [sensorData, setSensorData] = useState({
+    temperature: 0,
+    humidity: 0,
+    pulseRate: 0,
+    oxygenRate: 0,
+    spO2: 0,
+  });
+  const [rotations, setRotations] = useState({
+    temperature: 0,
+    humidity: 0,
+    pulseRate: 0,
+    oxygenRate: 0,
+    spO2: 0,
+  });
+  const [modalVisible, setModalVisible] = useState(false); // Menu Modal
+  const [messageModalVisible, setMessageModalVisible] = useState(false); // Message Modal
+  const [message, setMessage] = useState('');
+  const [messages, setMessages] = useState([]);
+  const viewRef = useRef(); // Ref for capturing screenshot
 
-  const [tempRotation, setTempRotation] = useState(0);
-  const [humRotation, setHumRotation] = useState(0);
-  const [pulseRotation, setPulseRotation] = useState(0);
-  const [oxygenRotation, setOxygenRotation] = useState(0);
-  const [spO2Rotation, setSpO2Rotation] = useState(0);
-  const maxPulseRate = 120; // Maximum value for pulse rate
-  const progressPulseRate = pulseRate / maxPulseRate; // Calculate progress for pulse rate
-
-  const maxSpO2 = 100; // Maximum value for SpO2
-  const progressSpO2 = spO2 / maxSpO2; // Calculate progress for SpO2
-
-
+  // Fetch and update sensor data in real-time
   useEffect(() => {
     const sensorDataRef = ref(database, 'sensorData');
 
-    onValue(sensorDataRef, (snapshot) => {
-      const sensorData = snapshot.val();
-      if (sensorData) {
-        setTemperature(sensorData.temperature || 0);
-        setHumidity(sensorData.humidity || 0);
-        setPulseRate(sensorData.heartRate || 0);
-        setOxygenRate(sensorData.oxygenRate || 0);
-        setSpO2(sensorData.SpO2 || 0);
-      } else {
-        setTemperature(0);
-        setHumidity(0);
-        setPulseRate(0);
-        setOxygenRate(0);
-        setSpO2(0);
-      }
+    const unsubscribe = onValue(sensorDataRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      const newSensorData = {
+        temperature: data.temperature || 0,
+        humidity: data.humidity || 0,
+        pulseRate: data.heartRate || 0,
+        oxygenRate: data.oxygenRate || 0,
+        spO2: data.SpO2 || 0,
+      };
+
+      setSensorData(newSensorData);
+
+      setRotations({
+        temperature: withTiming((newSensorData.temperature / 50) * 360, { duration: 1000, easing: Easing.linear }),
+        humidity: withTiming((newSensorData.humidity / 100) * 360, { duration: 1000, easing: Easing.linear }),
+        pulseRate: withTiming((newSensorData.pulseRate / 120) * 360, { duration: 1000, easing: Easing.linear }),
+        oxygenRate: withTiming((newSensorData.oxygenRate / 100) * 360, { duration: 1000, easing: Easing.linear }),
+        spO2: withTiming((newSensorData.spO2 / 100) * 360, { duration: 1000, easing: Easing.linear }),
+      });
     });
-  }, []);
-  // Function to determine the pulse rate status
-const getPulseRateStatus = () => {
-  if (pulseRate >= 60 && pulseRate <= 100) {
-    return { status: 'Normal', color: 'green' };
-  } else {
-    return { status: 'Abnormal', color: 'red' };
-  }
-};
 
-// Function to determine the SpO2 status
-const getSpO2Status = () => {
-  if (spO2 >= 95 && spO2 <= 100) {
-    return { status: 'Normal', color: 'green' };
-  } else {
-    return { status: 'Low', color: 'red' };
-  }
-};
+    
 
-  useEffect(() => {
-    setTempRotation(withTiming((temperature / 50) * 360, { duration: 1000, easing: Easing.linear }));
-    setHumRotation(withTiming((humidity / 100) * 360, { duration: 1000, easing: Easing.linear }));
-    setPulseRotation(withTiming((pulseRate / 120) * 360, { duration: 1000, easing: Easing.linear }));
-    setOxygenRotation(withTiming((oxygenRate / 100) * 360, { duration: 1000, easing: Easing.linear }));
-    setSpO2Rotation(withTiming((spO2 / 100) * 360, { duration: 1000, easing: Easing.linear }));
-  }, [temperature, humidity, pulseRate, oxygenRate, spO2]);
 
-  const handleSendMessage = () => {
-    if (message.trim() !== '') {
-      const messagesRef = ref(database, 'messages');
-      push(messagesRef, { text: message, timestamp: Date.now() })
-        .then(() => {
-          Alert.alert('Success', 'Message sent successfully');
-          setMessage(''); // Clear the input field
-        })
-        .catch((error) => {
-          Alert.alert('Error', 'Failed to send message: ' + error.message);
+    // Fetch recent messages
+    const messagesRef = query(ref(database, 'messages'), limitToLast(10));
+    get(messagesRef).then((snapshot) => {
+      const fetchedMessages = [];
+      snapshot.forEach((childSnapshot) => {
+        fetchedMessages.push({
+          id: childSnapshot.key,
+          ...childSnapshot.val(),
         });
-    } else {
-      Alert.alert('Error', 'Message cannot be empty');
+      });
+      setMessages(fetchedMessages.reverse());
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+
+ /// Capture and save the screenshot to the gallery
+const handleExportToImage = async () => {
+  try {
+    // Request permission to access media library
+    const { status } = await MediaLibrary.requestPermissionsAsync();
+
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', 'We need permission to save images to your gallery.');
+      return;
     }
+
+    // Capture the screenshot
+    const uri = await captureRef(viewRef, {
+      format: 'png',
+      quality: 0.8,
+    });
+
+    // Save the file to the gallery
+    const asset = await MediaLibrary.createAssetAsync(uri);
+    const album = await MediaLibrary.getAlbumAsync('HealthDataScreenshots');
+    if (album == null) {
+      await MediaLibrary.createAlbumAsync('HealthDataScreenshots', asset, false);
+    } else {
+      await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+    }
+
+    Alert.alert('Success', 'Screenshot saved to your gallery!');
+  } catch (error) {
+    Alert.alert('Error', 'Failed to save screenshot: ' + error.message);
+  }
+};
+  // Send message to Firebase
+  const handleSendMessage = () => {
+    if (message.trim() === '') {
+      Alert.alert('Error', 'Message cannot be empty');
+      return;
+    }
+
+    const messagesRef = ref(database, 'messages');
+    push(messagesRef, {
+      text: message,
+      timestamp: Date.now(),
+      sender: 'User', // Replace with actual user identification
+    })
+      .then(() => {
+        setMessage('');
+        Alert.alert('Success', 'Message sent successfully');
+      })
+      .catch((error) => {
+        Alert.alert('Error', `Failed to send message: ${error.message}`);
+      });
   };
 
-  const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'OK', onPress: () => navigation.navigate('Login') },
-      ],
-      { cancelable: false }
+  // Render health cards
+  const renderHealthCard = (title, value, unit, progress, progressColor, rotation) => {
+    return (
+      <View style={styles.sensorCard}>
+        <Text style={styles.sensorTitle}>{title}</Text>
+        <Animated.View style={{ transform: [{ rotate: `${rotation}deg` }] }}>
+          <ProgressCircle
+            style={styles.progressCircle}
+            progress={progress}
+            progressColor={progressColor}
+            backgroundColor={'#ECEFF1'}
+          />
+        </Animated.View>
+        <Text style={styles.sensorValue}>
+          {value}
+          {unit}
+        </Text>
+      </View>
     );
   };
 
   return (
-    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f9f9f9', padding: 16 }}>
-      <LottieView source={require('../assets/logo.json')} autoPlay loop style={{ height: 150, width: 150, marginBottom: 20 }} />
-      <Text style={{ fontSize: 24, fontWeight: 'bold', marginBottom: 20 }}>SeniorTrack</Text>
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#f9f9f9" />
 
-      {/* Row for Temperature and Humidity */}
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 20 }}>
-        <View style={{ backgroundColor: 'white', borderRadius: 10, padding: 16, alignItems: 'center', width: '45%' }}>
-          <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 10 }}>Temperature</Text>
-          <Animated.View style={{ transform: [{ rotate: `${tempRotation}deg` }] }}>
-            <ProgressCircle style={{ height: 120, width: 120 }} progress={temperature / 50} progressColor={'#FFA500'} backgroundColor={'#ECEFF1'} />
-          </Animated.View>
-          <Text style={{ marginTop: 12, fontWeight: 'bold', fontSize: 18 }}>{temperature.toFixed(1)}°C</Text>
-        </View>
-
-        <View style={{ backgroundColor: 'white', borderRadius: 10, padding: 16, alignItems: 'center', width: '45%' }}>
-          <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 10 }}>Humidity</Text>
-          <Animated.View style={{ transform: [{ rotate: `${humRotation}deg` }] }}>
-            <ProgressCircle style={{ height: 120, width: 120 }} progress={humidity / 100} progressColor={'#00A2FF'} backgroundColor={'#ECEFF1'} />
-          </Animated.View>
-          <Text style={{ marginTop: 12, fontWeight: 'bold', fontSize: 18 }}>{humidity.toFixed(1)}%</Text>
-        </View>
-      </View>
-
-      {/* Row for Pulse Rate and Oxygen Rate */}
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
-        <View style={{ backgroundColor: 'white', borderRadius: 10, padding: 16, alignItems: 'center', width: '45%' }}>
-          <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 10 }}>Pulse Rate</Text>
-          <Animated.View style={{ transform: [{ rotate: `${pulseRotation}deg` }] }}>
-            <ProgressCircle style={{ height: 120, width: 120 }} progress={progressPulseRate} progressColor={'#FF4D4D'} backgroundColor={'#ECEFF1'} />
-          </Animated.View>
-          <Text style={{ marginTop: 12, fontWeight: 'bold', fontSize: 18 }}>{pulseRate} bpm</Text>
-          <Text style={{ color: getPulseRateStatus().color, fontWeight: 'bold', marginTop: 5 }}>{getPulseRateStatus().status}</Text>
-        </View>
-
-        <View style={{ backgroundColor: 'white', borderRadius: 10, padding: 16, alignItems: 'center', width: '45%' }}>
-          <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 10 }}>Oxygen Rate</Text>
-          <Animated.View style={{ transform: [{ rotate: `${spO2Rotation}deg` }] }}>
-            <ProgressCircle style={{ height: 120, width: 120 }} progress={progressSpO2} progressColor={'#FF69B4'} backgroundColor={'#ECEFF1'} />
-          </Animated.View>
-          <Text style={{ marginTop: 12, fontWeight: 'bold', fontSize: 18 }}>{spO2}%</Text>
-          <Text style={{ color: getSpO2Status().color, fontWeight: 'bold', marginTop: 5 }}>{getSpO2Status().status}</Text>
-        </View>
-      </View>
-
-      {/* Message Input and Send Button */}
-      <View style={{ flexDirection: 'row', marginTop: 20, alignItems: 'center', width: '100%' }}>
-        <TextInput
-          style={{ flex: 1, borderColor: '#ccc', borderWidth: 1, borderRadius: 5, padding: 10, marginRight: 10 }}
-          placeholder="Type your message..."
-          value={message}
-          onChangeText={(text) => setMessage(text)}
-        />
-        <TouchableOpacity
-          style={{ backgroundColor: '#00BFFF', padding: 10, borderRadius: 5 }}
-          onPress={handleSendMessage}
-        >
-          <Text style={{ color: 'white', fontWeight: 'bold' }}>Send</Text>
+      {/* Header */}
+      <View style={styles.header}>
+        <LottieView source={require('../assets/logo.json')} autoPlay loop style={styles.logo} />
+        <Text style={styles.appTitle}>SeniorTrack</Text>
+        <TouchableOpacity style={styles.menuButton} onPress={() => setModalVisible(true)}>
+          <FontAwesome name="bars" size={24} color="#333" />
         </TouchableOpacity>
       </View>
 
-      <TouchableOpacity style={{ position: 'absolute', top: 40, right: 20 }} onPress={() => setModalVisible(true)}>
-        <FontAwesome name="bars" size={30} color="black" />
-      </TouchableOpacity>
+       {/* Health Cards */}
+       <ScrollView contentContainerStyle={styles.scrollViewContent} ref={viewRef}>
+        <View style={styles.sensorGrid}>
+          {renderHealthCard('Temperature', sensorData.temperature.toFixed(1), '°C', sensorData.temperature / 50, '#FFA500', rotations.temperature)}
+          {renderHealthCard('Humidity', sensorData.humidity.toFixed(1), '%', sensorData.humidity / 100, '#00A2FF', rotations.humidity)}
+          {renderHealthCard('Pulse Rate', sensorData.pulseRate, ' bpm', sensorData.pulseRate / 120, '#FF4D4D', rotations.pulseRate)}
+          {renderHealthCard('SpO2', sensorData.spO2, '%', sensorData.spO2 / 100, '#FF69B4', rotations.spO2)}
+        </View>
+      </ScrollView>
 
-      <Modal visible={modalVisible} animationType="fade" transparent={true} onRequestClose={() => setModalVisible(false)}>
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.5)' }}>
-          <View style={{ width: 250, padding: 20, backgroundColor: 'white', borderRadius: 10, alignItems: 'center' }}>
-            <Text style={{ fontSize: 20, marginBottom: 20 }}>Menu</Text>
-            <LinearGradient colors={['#FF4C4C', '#FF6F6F']} style={{ marginBottom: 10, borderRadius: 5, paddingVertical: 12, width: '100%' }}>
-              <TouchableOpacity onPress={handleLogout}>
-                <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 18 }}>Logout</Text>
-              </TouchableOpacity>
-            </LinearGradient>
-            <LinearGradient colors={['#00BFFF', '#1E90FF']} style={{ borderRadius: 5, paddingVertical: 12, width: '100%' }}>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 18 }}>Close</Text>
-              </TouchableOpacity>
-            </LinearGradient>
+      {/* Export to Image Button */}
+      <View style={styles.exportSection}>
+        <TouchableOpacity style={styles.exportButton} onPress={handleExportToImage}>
+          <Ionicons name="download" size={24} color="white" />
+          <Text style={styles.exportButtonText}>Export to Image</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Message Button */}
+      <View style={styles.messageSection}>
+        <TouchableOpacity style={styles.messagesButton} onPress={() => setMessageModalVisible(true)}>
+          <Ionicons name="chatbubbles" size={24} color="white" />
+          <Text style={styles.messagesButtonText}>View Messages</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Menu Modal */}
+      <Modal
+        visible={modalVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.overlay}>
+          <View style={styles.menuModalContent}>
+            <Text style={styles.menuModalTitle}>Menu</Text>
+         
+            <TouchableOpacity style={styles.menuModalButton} onPress={() => Alert.alert('Logout', 'Are you sure?', [{ text: 'Cancel' }, { text: 'OK', onPress: () => navigation.navigate('Login') }])}>
+              <Text style={styles.menuModalButtonText}>Logout</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.closeMenuButton} onPress={() => setModalVisible(false)}>
+              <Text style={styles.closeMenuButtonText}>Close</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
-    </View>
+
+      {/* Message Modal */}
+      <Modal
+        visible={messageModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setMessageModalVisible(false)}
+      >
+        <View style={styles.overlay}>
+          <View style={styles.messageModalContent}>
+            <Text style={styles.messageModalTitle}>Messages</Text>
+            <ScrollView style={styles.messagesScrollView}>
+              {messages.map((msg) => (
+                <View key={msg.id} style={styles.messageItem}>
+                  <Text style={styles.messageText}>{msg.text}</Text>
+                  <Text style={styles.messageTimestamp}>
+                    {new Date(msg.timestamp).toLocaleString()}
+                  </Text>
+                </View>
+              ))}
+            </ScrollView>
+            <View style={styles.messageInputContainer}>
+              <TextInput
+                style={styles.messageInput}
+                placeholder="Type your message..."
+                value={message}
+                onChangeText={setMessage}
+                multiline
+              />
+              <TouchableOpacity style={styles.sendMessageButton} onPress={handleSendMessage}>
+                <Ionicons name="send" size={24} color="white" />
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity style={styles.closeModalButton} onPress={() => setMessageModalVisible(false)}>
+              <Text style={styles.closeModalButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f9f9f9',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: 'white',
+    elevation: 2,
+  },
+  logo: {
+    height: 50,
+    width: 50,
+    marginRight: 10,
+  },
+  appTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    flex: 1,
+  },
+  menuButton: {
+    padding: 10,
+  },
+  scrollViewContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 20,
+  },
+  sensorGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    top:33
+  },
+  sensorCard: {
+    backgroundColor: 'white',
+    borderRadius: 15,
+    padding: 16,
+    width: '48%',
+    marginBottom: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  sensorTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  progressCircle: {
+    height: 120,
+    width: 120,
+  },
+  sensorValue: {
+    fontWeight: 'bold',
+    fontSize: 18,
+    marginTop: 10,
+  },
+  messageSection: {
+    marginTop: 20,
+    alignItems: 'center',
+  },
+  messagesButton: {
+    flexDirection: 'row',
+    backgroundColor: '#3498db',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    bottom: 100
+  },
+  messagesButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    marginLeft: 10,
+  },
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)', // Semi-transparent background for modals
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  menuModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 20,
+    width: '80%',
+    alignItems: 'center',
+    elevation: 5, // Adds a slight shadow effect
+  },
+  menuModalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    marginBottom: 20,
+  },
+  menuModalButton: {
+    backgroundColor: '#3498db',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  menuModalButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  closeMenuButton: {
+    backgroundColor: '#e74c3c',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    width: '100%',
+    alignItems: 'center',
+  },
+  closeMenuButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  messageModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 20,
+    width: '90%',
+    alignItems: 'center',
+  },
+  messageModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 20,
+  },
+  messagesScrollView: {
+    width: '100%',
+    maxHeight: 300,
+    marginBottom: 20,
+  },
+  messageItem: {
+    padding: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ddd',
+  },
+  messageText: {
+    fontSize: 16,
+  },
+  messageTimestamp: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: 5,
+  },
+  messageInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 20,
+  },
+  messageInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 10,
+    padding: 10,
+    marginRight: 10,
+  },
+  sendMessageButton: {
+    backgroundColor: '#3498db',
+    padding: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  closeModalButton: {
+    backgroundColor: '#e74c3c',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    marginTop: 10,
+  },
+  closeModalButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  exportSection: {
+    marginTop: 20,
+    alignItems: 'center',
+  },
+  exportButton: {
+    top:20,
+    flexDirection: 'row',
+    backgroundColor: '#2ecc71',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  exportButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    marginLeft: 10,
+  },
+});
